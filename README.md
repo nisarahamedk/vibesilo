@@ -72,6 +72,20 @@ Run with the profile:
 vibesilo run --config vibesilo.json -- gh repo list
 ```
 
+### Pi-ready image
+
+Build the bundled image (pi + gh + pnpm + convex + wrangler + agent-browser):
+
+```bash
+docker build -f examples/Dockerfile.pi -t vibesilo-pi .
+```
+
+Use the provided profile:
+
+```bash
+vibesilo run --config examples/vibesilo.local.json -- pi
+```
+
 ## SDK usage
 
 ```ts
