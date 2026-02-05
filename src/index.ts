@@ -1,2 +1,2 @@
 export { Sandbox } from "./sandbox.js";
-export type { SandboxOptions, SecretConfig, ExecResult } from "./types.js";
+export type { SandboxOptions, SandboxProfile, SecretConfig, MountConfig, ExecResult } from "./types.js";

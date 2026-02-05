@@ -1,10 +1,10 @@
 import { mkdir, rm, writeFile, copyFile, access } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { docker, dockerQuiet, dockerSpawn } from "./docker.js";
-import type { ExecResult, SandboxOptions } from "./types.js";
+import type { ExecResult, MountConfig, SandboxOptions } from "./types.js";
 
 const MITM_IMAGE = "mitmproxy/mitmproxy:10.2.4";
 
@@ -168,6 +168,27 @@ export class Sandbox {
     await rm(this.workdir, { recursive: true, force: true });
   }
 
+  private resolveHostPath(path: string) {
+    if (path.startsWith("~/")) {
+      return join(homedir(), path.slice(2));
+    }
+    if (path === "~") {
+      return homedir();
+    }
+    return resolve(process.cwd(), path);
+  }
+
+  private mountArgs(mounts: MountConfig[] | undefined) {
+    if (!mounts || mounts.length === 0) return [];
+    const args: string[] = [];
+    for (const mount of mounts) {
+      const hostPath = this.resolveHostPath(mount.host);
+      const suffix = mount.readOnly === false ? "rw" : "ro";
+      args.push("-v", `${hostPath}:${mount.guest}:${suffix}`);
+    }
+    return args;
+  }
+
   private async start() {
     await mkdir(this.workdir, { recursive: true });
     const addonsDir = join(this.workdir, "addons");
@@ -277,6 +298,8 @@ export class Sandbox {
       "sleep infinity",
     ].join("\n");
 
+    const mountArgs = this.mountArgs(this.options.mounts);
+
     await docker([
       "run",
       "-d",
@@ -286,6 +309,7 @@ export class Sandbox {
       this.networkInternal,
       "-v",
       `${certsDir}:/certs`,
+      ...mountArgs,
       ...envArgs,
       this.options.image,
       "/bin/sh",

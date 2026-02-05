@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
 import { Sandbox } from "./sandbox.js";
+import type { MountConfig, SandboxProfile, SecretConfig } from "./types.js";
 
 const program = new Command();
 
@@ -12,7 +14,8 @@ program
 program
   .command("run")
   .description("Run a command inside a new sandbox")
-  .requiredOption("-i, --image <image>", "Docker image to use")
+  .option("-c, --config <path>", "Path to sandbox profile JSON")
+  .option("-i, --image <image>", "Docker image to use")
   .option("-a, --allow <host>", "Allow outbound host (repeatable)", collect, [])
   .option(
     "-s, --secret <spec>",
@@ -20,16 +23,36 @@ program
     collect,
     [],
   )
+  .option("-m, --mount <spec>", "Mount spec: host:guest[:ro|rw] (repeatable)", collect, [])
+  .option("--mount-auth", "Mount ~/.pi/agent/auth.json to /root/.pi/agent/auth.json (ro)")
   .allowUnknownOption(true)
   .argument("<cmd...>", "Command to run")
   .action(async (cmd: string[], options) => {
-    const allowNet = options.allow as string[];
-    const secrets = parseSecrets(options.secret as string[]);
+    const profile = options.config ? loadProfile(options.config as string) : {};
+    const allowNet = mergeList(profile.allowNet, options.allow as string[]);
+    const secrets = mergeSecrets(profile.secrets, parseSecrets(options.secret as string[]));
+    const mounts = mergeMounts(profile.mounts, parseMounts(options.mount as string[]));
+    if (options.mountAuth) {
+      mounts.push({
+        host: "~/.pi/agent/auth.json",
+        guest: "/root/.pi/agent/auth.json",
+        readOnly: true,
+      });
+    }
+
+    const image = options.image ?? profile.image;
+    if (!image) {
+      throw new Error("Missing image. Provide --image or set it in the config.");
+    }
 
     const sandbox = await Sandbox.create({
-      image: options.image as string,
+      image,
       allowNet,
       secrets,
+      env: profile.env,
+      mounts,
+      name: profile.name,
+      debugInjectHeader: profile.debugInjectHeader,
     });
 
     try {
@@ -48,8 +71,28 @@ function collect(value: string, previous: string[]) {
   return previous.concat([value]);
 }
 
+function loadProfile(path: string): SandboxProfile {
+  const raw = readFileSync(path, "utf-8");
+  return JSON.parse(raw) as SandboxProfile;
+}
+
+function mergeList(base: string[] | undefined, extra: string[]) {
+  return [...(base ?? []), ...extra];
+}
+
+function mergeSecrets(
+  base: Record<string, SecretConfig> | undefined,
+  extra: Record<string, SecretConfig>,
+) {
+  return { ...(base ?? {}), ...extra };
+}
+
+function mergeMounts(base: MountConfig[] | undefined, extra: MountConfig[]) {
+  return [...(base ?? []), ...extra];
+}
+
 function parseSecrets(items: string[]) {
-  const secrets: Record<string, { hosts: string[]; value: string }> = {};
+  const secrets: Record<string, SecretConfig> = {};
   for (const item of items) {
     const [left, hostsPart] = item.split("@");
     if (!left || !hostsPart) {
@@ -66,4 +109,18 @@ function parseSecrets(items: string[]) {
     };
   }
   return secrets;
+}
+
+function parseMounts(items: string[]) {
+  const mounts: MountConfig[] = [];
+  for (const item of items) {
+    const parts = item.split(":");
+    if (parts.length < 2 || parts.length > 3) {
+      throw new Error(`Invalid mount spec: ${item}`);
+    }
+    const [host, guest, mode] = parts;
+    const readOnly = mode ? mode !== "rw" : true;
+    mounts.push({ host, guest, readOnly });
+  }
+  return mounts;
 }

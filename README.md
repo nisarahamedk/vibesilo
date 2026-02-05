@@ -41,7 +41,29 @@ vibesilo run \
   --image node:20-bookworm \
   --allow api.github.com \
   --secret GH_TOKEN=ghp_xxx@api.github.com \
+  --mount .:/workspace:rw \
   -- gh repo list
+```
+
+### Config profiles
+
+Create a `vibesilo.json` profile:
+
+```json
+{
+  "image": "node:20-bookworm",
+  "allowNet": ["api.github.com", "auth.openai.com"],
+  "mounts": [
+    { "host": ".", "guest": "/workspace", "readOnly": false },
+    { "host": "~/.pi/agent/auth.json", "guest": "/root/.pi/agent/auth.json", "readOnly": true }
+  ]
+}
+```
+
+Run with the profile:
+
+```bash
+vibesilo run --config vibesilo.json -- gh repo list
 ```
 
 ## SDK usage
@@ -52,6 +74,7 @@ import { Sandbox } from "vibesilo";
 const sandbox = await Sandbox.create({
   image: "node:20-bookworm",
   allowNet: ["api.github.com"],
+  mounts: [{ host: ".", guest: "/workspace", readOnly: false }],
   secrets: {
     GH_TOKEN: {
       hosts: ["api.github.com"],
@@ -67,6 +90,8 @@ await sandbox.close();
 
 ## Notes
 
+- `--mount-auth` mounts `~/.pi/agent/auth.json` into the sandbox as read-only.
+- Mounts default to read-only unless you specify `:rw` or `readOnly: false`.
 - `debugInjectHeader` adds a response header to prove injection during tests.
   Leave it off in normal runs.
 
