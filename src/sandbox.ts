@@ -277,6 +277,8 @@ export class Sandbox {
       `SSL_CERT_FILE=/certs/mitmproxy-ca-cert.pem`,
       "-e",
       `CURL_CA_BUNDLE=/certs/mitmproxy-ca-cert.pem`,
+      "-e",
+      `NODE_EXTRA_CA_CERTS=/certs/mitmproxy-ca-cert.pem`,
     ];
 
     for (const [key, value] of Object.entries({
